@@ -41,7 +41,7 @@ class IntegrationBase
     }
 
     //优化过程中Bias会更新，需要根据新的bias重新计算预积分
-    void repropagate(const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)
+    void repropagate(const Eigen::Vector3d &_linearized_ba, const Eigen::Vector3d &_linearized_bg)      //新的加速度、角速度偏差
     {
         sum_dt = 0.0;
         acc_0 = linearized_acc;
@@ -53,7 +53,7 @@ class IntegrationBase
         linearized_bg = _linearized_bg;
         jacobian.setIdentity();
         covariance.setZero();
-        for (int i = 0; i < static_cast<int>(dt_buf.size()); i++)
+        for (int i = 0; i < static_cast<int>(dt_buf.size()); i++)   // 从投开始，重新计算
             propagate(dt_buf[i], acc_buf[i], gyr_buf[i]);
     }
 
@@ -62,13 +62,13 @@ class IntegrationBase
     *          构造误差的线性化递推方程，得到Jacobian和Covariance递推公式-> Paper 式9、10、11
     * @return  void
     */
-    void midPointIntegration(double _dt, 
-                            const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
-                            const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1,
-                            const Eigen::Vector3d &delta_p, const Eigen::Quaterniond &delta_q, const Eigen::Vector3d &delta_v,
-                            const Eigen::Vector3d &linearized_ba, const Eigen::Vector3d &linearized_bg,
-                            Eigen::Vector3d &result_delta_p, Eigen::Quaterniond &result_delta_q, Eigen::Vector3d &result_delta_v,
-                            Eigen::Vector3d &result_linearized_ba, Eigen::Vector3d &result_linearized_bg, bool update_jacobian)
+    void midPointIntegration(double _dt,    // 时间间隔
+                            const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,       // 上次测量的加速度、角速度
+                            const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1,       // 本次测量的加速度、角速度
+                            const Eigen::Vector3d &delta_p, const Eigen::Quaterniond &delta_q, const Eigen::Vector3d &delta_v,          // 相对初始参考系的pqv
+                            const Eigen::Vector3d &linearized_ba, const Eigen::Vector3d &linearized_bg,     // 相对初始参考系的加速度偏差、角速度偏差
+                            Eigen::Vector3d &result_delta_p, Eigen::Quaterniond &result_delta_q, Eigen::Vector3d &result_delta_v,   // pqv计算结果
+                            Eigen::Vector3d &result_linearized_ba, Eigen::Vector3d &result_linearized_bg, bool update_jacobian)         // 偏差计算结果、是否更新雅克比
     {
         //ROS_INFO("midpoint integration");
         Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);
@@ -76,8 +76,8 @@ class IntegrationBase
         result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
         Vector3d un_acc_1 = result_delta_q * (_acc_1 - linearized_ba);
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-        result_delta_p = delta_p + delta_v * _dt + 0.5 * un_acc * _dt * _dt;
-        result_delta_v = delta_v + un_acc * _dt;
+        result_delta_p = delta_p + delta_v * _dt + 0.5 * un_acc * _dt * _dt;        // p = p_0 + 1/2 * a * t^2
+        result_delta_v = delta_v + un_acc * _dt;                                                             // v = v + a * t
         result_linearized_ba = linearized_ba;
         result_linearized_bg = linearized_bg;         
 
@@ -133,8 +133,8 @@ class IntegrationBase
 
             //step_jacobian = F;
             //step_V = V;
-            jacobian = F * jacobian;
-            covariance = F * covariance * F.transpose() + V * noise * V.transpose();
+            jacobian = F * jacobian;        // J_{k+1} = F * J_{K}，J_{0} = I
+            covariance = F * covariance * F.transpose() + V * noise * V.transpose();    // P_{k+1} = F * Q_{k} *F^T + V * Q V^{T} 
         }
 
     }
@@ -144,7 +144,7 @@ class IntegrationBase
     * @brief   IMU预积分传播方程
     * @Description  积分计算两个关键帧之间IMU测量的变化量： 
     *               旋转delta_q 速度delta_v 位移delta_p
-    *               加速度的biaslinearized_ba 陀螺仪的Bias linearized_bg
+    *               加速度的bias linearized_ba 陀螺仪的Bias linearized_bg
     *               同时维护更新预积分的Jacobian和Covariance,计算优化时必要的参数
     * @param[in]   _dt 时间间隔
     * @param[in]   _acc_1 线加速度
@@ -181,6 +181,7 @@ class IntegrationBase
      
     }
 
+    // 计算第i帧和第i帧之间的残差（第 i、j 帧 位置、姿态、速度、加速度偏差、角速度偏差）
     Eigen::Matrix<double, 15, 1> evaluate(const Eigen::Vector3d &Pi, const Eigen::Quaterniond &Qi, const Eigen::Vector3d &Vi, const Eigen::Vector3d &Bai, const Eigen::Vector3d &Bgi,
                                           const Eigen::Vector3d &Pj, const Eigen::Quaterniond &Qj, const Eigen::Vector3d &Vj, const Eigen::Vector3d &Baj, const Eigen::Vector3d &Bgj)
     {
@@ -209,9 +210,9 @@ class IntegrationBase
         return residuals;
     }
 
-    double dt;
-    Eigen::Vector3d acc_0, gyr_0;
-    Eigen::Vector3d acc_1, gyr_1;
+    double dt;          // 时间间隔
+    Eigen::Vector3d acc_0, gyr_0;   // 线加速度、角加速度
+    Eigen::Vector3d acc_1, gyr_1;   
 
     const Eigen::Vector3d linearized_acc, linearized_gyr;
     Eigen::Vector3d linearized_ba, linearized_bg;
